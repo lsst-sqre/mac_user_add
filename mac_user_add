@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Requires sudo or root.
+if [ "$1" == "" ] ; then
+    SCRIPTNAME=`basename "$0"`
+    echo "${SCRIPTNAME} requires a username for the last argument."
+    exit -1
+fi
+
+# Make sure only root can run our script
+if [ "$(id -u)" != "0" ]; then
+    echo "This script must be run using sudo." 1>&2
+    exit 1
+fi
+
+# Arguments and variables.
+USERNAME=${@: -1}
+PASSWD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+REALNAME=${USERNAME}
+GROUPID="20"
+USERID="501"
+
+# Find an available UniqueID for user.
+while true; do
+    USERID_AVAILABLE=$( id ${USERID} 2>&1 )
+    if [ "${USERID_AVAILABLE}" = "id: ${USERID}: no such user" ]; then
+	break
+    fi
+    USERID=$[$USERID + 1]
+done
+
+# Trivial usage information.
+usage() { echo "${SCRIPTNAME} usage:" && grep " .)\ #" $0; exit 0; }
+[ $# -eq 0 ] && usage
+
+while getopts ":had:r:u:" arg; do
+    case $arg in
+        a) # Create an admin user.
+	    GROUPID="80"
+	    ;;
+	d) # Delete user.
+	    dscl . delete /Users/${USERNAME}
+	    echo
+	    echo "Deleted user: ${USERNAME}"
+	    echo
+	    exit
+	    ;;
+	r) # User's real name.
+	    REALNAME=${OPTARG}
+	    ;;
+	h | *) # Display help.
+	    usage
+	    exit
+	    ;;
+    esac
+done
+
+. /etc/rc.common
+dscl . create /Users/${USERNAME}
+dscl . create /Users/${USERNAME} RealName "${REALNAME}"
+dscl . create /Users/${USERNAME} hint "Your password is a random string."
+#dscl . create /Users/${USERNAME} picture "/Path/To/Picture.png"
+dscl . passwd /Users/${USERNAME} ${PASSWD}
+dscl . create /Users/${USERNAME} UniqueID ${USERID}
+dscl . create /Users/${USERNAME} PrimaryGroupID ${GROUPID}
+dscl . create /Users/${USERNAME} UserShell /bin/bash
+dscl . create /Users/${USERNAME} NFSHomeDirectory /Users/${USERNAME}
+cp -R /System/Library/User\ Template/English.lproj /Users/${USERNAME}
+chown -R ${USERNAME}:staff /Users/${USERNAME}
+echo
+echo "Your password is: ${PASSWD}"
+echo
+exit
